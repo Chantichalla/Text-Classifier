@@ -15,3 +15,7 @@ diagnose.py
 glove.6B.100d.txt
 
 test_task.py
+
+audit_data.py
+
+diagnose.py
