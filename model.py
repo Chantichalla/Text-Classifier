@@ -1,35 +1,49 @@
 import torch.nn as nn
 import torch
 
+# Global parameters
+N_LAYERS = 2
+OUTPUT_DIM = 8
+HIDDEN_DIM = 128
+DROPOUT = 0.5
+
 class LSTM(nn.Module):
-    def __init__(self,vocab_size,embed_dim,hidden_dim, output_dim):
+    def __init__(self,vocab_size,embed_dim, hidden_dim, output_dim, glove_weights=None):
         super(LSTM,self).__init__()
         #First layer : Embed layer
-        self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
+        if glove_weights is not None :
+            self.embedding = nn.Embedding.from_pretrained(glove_weights, freeze=True)
+        else:
+            self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
+
         #Second layer : LSTM layer
-        self.lstm = nn.LSTM(embed_dim, hidden_dim, batch_first=True)
+        self.lstm = nn.LSTM(embed_dim,HIDDEN_DIM,num_layers=N_LAYERS, batch_first=True, bidirectional=True, dropout= DROPOUT)
 
         #Third layer: FUlly connected output
-        self.fc = nn.Linear(hidden_dim, output_dim)
+        self.fc = nn.Linear(HIDDEN_DIM * 2, OUTPUT_DIM)
+        
+        self.dropout = nn.Dropout(DROPOUT)
 
     def forward(self,text):
-        embedded = self.embedding(text)
+        embedded = self.dropout(self.embedding(text))
 
-        output, (hidden, cell) = self.lstm(embedded)
+        lstm_output, (hidden, cell) = self.lstm(embedded)
 
-        final_memory = hidden[-1]
+        backward_hidden = hidden[-2, :, :]
+        forward_hidden = hidden[-1, :, :]
 
-        prediction = self.fc(final_memory)
+        final_summary = torch.cat((backward_hidden,forward_hidden), dim=1)
+        prediction = self.fc(final_summary)
 
         return prediction
-def get_model(vocab_size, embed_dim=100, hidden_dim=64, output_dim=8):
+def get_model(vocab_size, embed_dim=100, hidden_dim=HIDDEN_DIM, output_dim=OUTPUT_DIM):
     """
     Helper function to initialize the model and move it to GPU.
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Instantiate the class
-    model = LSTM(vocab_size, embed_dim, hidden_dim, output_dim)
+    model = LSTM(vocab_size, embed_dim,hidden_dim, output_dim)
     
     # Move to GPU
     model = model.to(device)

@@ -8,3 +8,10 @@ universal_model.pth
 vocab.pkl
 
 my_bert_model/
+
+audit_data.py
+diagnose.py
+
+glove.6B.100d.txt
+
+test_task.py

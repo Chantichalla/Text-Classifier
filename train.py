@@ -3,28 +3,83 @@ import torch.nn as nn
 import torch.optim as optim
 import time
 import pickle
+import numpy as np
+import os
 
 from data_t import get_data_loader
 from model import LSTM
 
 #Configuration
-NUM_EPOCHS = 15 # How many times to read the  entire dataset
-LEARNING_RATE = 0.0005 # How fast the model learns
+NUM_EPOCHS = 20 # How many times to read the  entire dataset
+LEARNING_RATE = 0.0001 # How fast the model learns
 HIDDEN_DIM = 128
+N_LAYERS = 2
 EMBED_DIM = 100
 OUTPUT_DIM = 8
 #Check for GPU
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Training on device: {device}")
 
+# In train.py
+
+# --- NEW HELPER: GLOVE LOADER ---
+def load_glove_vectors(vocab, embed_dim):
+    # GloVe file name for 100 dimensions
+    GLOVE_FILE = 'glove.6B.100d.txt'
+    
+    # Check if the file exists first
+    if not os.path.exists(GLOVE_FILE):
+        print(f"\n❌ GLOVE ERROR: '{GLOVE_FILE}' not found. Download it and place it in the root directory.")
+        return None, None
+
+    print(f"Loading GloVe vectors from {GLOVE_FILE}...")
+    
+    # 1. Initialize a matrix with random numbers (this will hold the GloVe vectors)
+    # Shape: [Vocab Size, Embedding Dimension]
+    glove_weights = np.random.uniform(-0.05, 0.05, (len(vocab), embed_dim))
+    
+    # 2. Create a dictionary to map words to their GloVe vectors
+    glove_map = {}
+    with open(GLOVE_FILE, 'r', encoding='utf-8') as f:
+        for line in f:
+            parts = line.strip().split()
+            word = parts[0]
+            vector = np.array(parts[1:], dtype=np.float32)
+            glove_map[word] = vector
+            
+    # 3. Map GloVe vectors to our Vocab IDs
+    hits = 0
+    
+    # Iterate through our custom vocabulary {word: ID}
+    for word, idx in vocab.items():
+        if word in glove_map:
+            # We found the word! Inject the GloVe vector into our matrix
+            glove_weights[idx] = glove_map[word]
+            hits += 1
+        elif word in ['<PAD>', '<UNK>']:
+            # Ensure padding/unknown tokens are zeroed out (or left as random init)
+            glove_weights[idx] = np.zeros(embed_dim, dtype=np.float32)
+            hits += 1
+            
+    print(f"   ✅ Successfully mapped {hits} out of {len(vocab)} words.")
+    
+    # Convert NumPy array to PyTorch Tensor
+    glove_tensor = torch.tensor(glove_weights, dtype=torch.float)
+    
+    return glove_tensor
+
 def train_model():
     # GET Data
     train_loader, val_loader , test_loader , vocab = get_data_loader()
     vocab_size = len(vocab)
     print(f"Vocab size:{vocab_size}")
+    # 2. LOAD GLOVE WEIGHTS 
+    glove_tensor = load_glove_vectors(vocab, EMBED_DIM)
+    if glove_tensor is None:
+        glove_tensor = torch.empty(vocab_size, EMBED_DIM) # Placeholder
 
     #Build model
-    model = LSTM(vocab_size , EMBED_DIM, HIDDEN_DIM, OUTPUT_DIM)
+    model = LSTM(vocab_size , EMBED_DIM, HIDDEN_DIM, OUTPUT_DIM, glove_tensor)
     #Moving brain to GPU
     model = model.to(device)
     #Setup tools
